@@ -1,0 +1,6 @@
+• Write a Langgraph app that incorporates search into its responses
+• E.g., it should be able to figure out things like “Who is the quarterback for the Bears?”
+• Langchain’s Tavily Search tool should come in handy
+• https://python.langchain.com/docs/integrations/tools/tavily_sear
+ch/
+• For extra credit, incorporate more tools and functionality into your app
