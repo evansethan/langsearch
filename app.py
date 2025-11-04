@@ -9,7 +9,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langchain_openai import ChatOpenAI
 from langchain_community.tools.tavily_search import TavilySearchResults
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, BaseMessage
 
 os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
 os.environ["TAVILY_API_KEY"] = st.secrets["TAVILY_API_KEY"]
@@ -19,15 +19,48 @@ class AgentState(TypedDict):
 
 @st.cache_resource
 def get_agent():
+    def calculator(expression: str) -> str:
+        """A simple calculator that evaluates a string expression."""
+        try:
+            allowed_chars = "0123456789+-*/.() "
+            if all(c in allowed_chars for c in expression):
+                return str(eval(expression))
+            else:
+                return "Error: Invalid characters in expression."
+        except Exception as e:
+            return f"Error evaluating expression: {e}"
+
     tavily = TavilySearchResults(max_results=3)
-    llm = ChatOpenAI(model="gpt-4o").bind_tools([tavily])
+    # Manually create a dictionary for the calculator tool
+    calculator_tool_dict = {
+        "name": "calculator",
+        "description": "A simple calculator that evaluates a string expression.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "expression": {
+                    "type": "string",
+                    "description": "The mathematical expression to evaluate."
+                }
+            },
+            "required": ["expression"]
+        }
+    }
+    llm = ChatOpenAI(model="gpt-4o").bind_tools([tavily, calculator_tool_dict])
     
     def agent(state):
         return {"messages": [llm.invoke(state["messages"])]}
     
     def tools(state):
-        return {"messages": [ToolMessage(content=str(tavily.invoke(tc["args"])),
-                                         tool_call_id=tc["id"]) for tc in state["messages"][-1].tool_calls]}
+        tool_calls = state["messages"][-1].tool_calls
+        tool_messages = []
+        for tc in tool_calls:
+            if tc["name"] == "tavily_search_results_json":
+                result = tavily.invoke(tc["args"])
+            elif tc["name"] == "calculator":
+                result = calculator(tc["args"]["expression"])
+            tool_messages.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
+        return {"messages": tool_messages}
     
     def route(state):
         return "tools" if state["messages"][-1].tool_calls else "end"
@@ -40,7 +73,7 @@ def get_agent():
     g.add_edge("tools", "agent")
     return g.compile()
 
-st.title("LangGraph Search Agent")
+st.title("AI Chat (Web Search and Calculator enabled)")
 
 if "msgs" not in st.session_state:
     st.session_state.msgs = []
